@@ -1,0 +1,33 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const sandbox = {};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/room-controls.js'), 'utf8'), sandbox);
+const h = sandbox.GlassHomeRoomControls;
+const state = (s, p, f = 15) => ({ state: s, attributes: { current_position: p, supported_features: f } });
+for (const s of [undefined, state('unavailable', 50), state('unknown', 50)]) {
+  const c = h.cover(s);
+  assert.equal(c.open || c.close || c.stop, false);
+  assert.equal(h.command('cover.example', 'open', s), null);
+}
+assert.equal(h.cover(state('closed', 0)).open, true);
+assert.equal(h.cover(state('closed', 0)).close, false);
+assert.equal(h.cover(state('open', 100)).open, false);
+assert.equal(h.cover(state('open', 100)).close, true);
+assert.equal(h.cover(state('open', 1)).open, true);
+assert.equal(h.cover(state('opening', 30)).open, false);
+assert.equal(h.cover(state('opening', 30)).close, true);
+assert.equal(h.cover(state('closing', 30)).stop, true);
+assert.equal(h.cover(state('closing', 30)).close, false);
+assert.equal(h.cover(state('open', 50, 8)).open, false);
+assert.equal(h.cover(state('open', 50, 8)).close, false);
+assert.equal(h.cover(state('open', 50, 8)).stop, true);
+assert.equal(h.cover(state('open', undefined)).position, null);
+assert.equal(h.command('switch.example', 'open', state('closed', 0)), null);
+assert.equal(h.command('cover.example', 'toggle', state('closed', 0)), null);
+const command = h.command('cover.example', 'open', state('closed', 0));
+assert.equal(command.domain, 'cover');
+assert.equal(command.service, 'open_cover');
+assert.equal(command.data.entity_id, 'cover.example');
+console.log('Room-control state, capability and command-gating checks passed.');

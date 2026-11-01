@@ -176,7 +176,7 @@
         if (!r) return;
         var name = r.name || T("Stanza") + " " + (i + 1), rk = "r" + i;
         var rImg = libImg(r.image) || guessImg(name) || "luce_salotto";
-        var room = { n: name, ic: mdi(r.icon) || IMG_ICON[rImg] || "mdi-home", c: r.color || ROOM_COLORS[i % ROOM_COLORS.length], l: [], s: [], o: [], t: [] };
+        var room = { n: name, ic: mdi(r.icon) || IMG_ICON[rImg] || "mdi-home", c: r.color || ROOM_COLORS[i % ROOM_COLORS.length], l: [], s: [], o: [], t: [], covers: arrIds(r.covers), controls: arrIds(r.controls) };
         arrIds(r.lights).forEach(function (x, j) {
           x = typeof x === "string" ? { entity: x } : x;
           if (!x || !x.entity) return;
@@ -292,6 +292,7 @@
     /* ------------------------------------------------------------------ costruzione interfaccia */
     function buildScenes() {
       var box = $("#scenes");
+      if (!SCENES.length) { box.parentNode.hidden = true; return; }
       SCENES.forEach(function (sc) {
         var b = el("button", "scene", '<img class="s-img" alt="" draggable="false"><span class="s-ico"><i class="mdi ' + sc.ic + '"></i></span><span><b>' + esc(sc.n) + "</b><small>" + esc(sc.sub) + "</small></span>" + PEN, { type: "button", "data-scene": sc.id, "data-img": sc.img, "data-label": T("Scena {n}", { n: sc.n }), "data-on": "0" });
         b.style.setProperty("--s1", sc.s1); b.style.setProperty("--s2", sc.s2);
@@ -305,7 +306,7 @@
     function hasMotion(k) { return !LIVE || (ENT.motion[k] && ENT.motion[k].length); }
     function sensChip(k) {
       var label = motionLabel(k);
-      return '<span class="sens" data-sensor="' + k + '" data-img="sensore_movimento" data-ov="mov_' + k + '" data-label="' + esc(T("Movimento {n}", { n: label })) + '" data-on="0"><span class="s-ph"><img class="s-img" alt="" draggable="false"></span><i class="mdi mdi-motion-sensor"></i>' + esc(label) + PEN + "</span>";
+      return '<span class="sens" data-sensor="' + k + '" data-img="sensore_movimento" data-ov="mov_' + k + '" data-label="' + esc(T("Movimento {n}", { n: label })) + '" data-on="0"><span class="s-ph"><img class="s-img" alt="" draggable="false"></span><i class="mdi mdi-motion-sensor"></i>' + esc(label) + ' <b class="motion-state"></b>' + PEN + "</span>";
     }
     /* movimento di una stanza: acceso se almeno un sensore disponibile vede movimento, offline solo se lo sono tutti */
     function roomMot(k) {
@@ -330,6 +331,7 @@
     }
     function buildRooms() {
       var box = $("#rooms");
+      buildPeople(box.parentNode);
       /* stanze dalla config: righe che si riempiono da sole, ogni stanza larga in proporzione alle sue luci */
       if (CUSTOM) box.classList.add("auto");
       ROOMS.forEach(function (r) {
@@ -347,6 +349,7 @@
         if (r.cell) body += '<div class="sens-cell sensors">' + chips + "</div>"; else if (chips) body += '<div class="sensors strip">' + chips + "</div>";
         if (!r.l.length) card.classList.add("nolights");
         card.innerHTML = '<div class="room-head"><span class="r-ico"><i class="mdi ' + r.ic + '"></i></span><h3>' + esc(r.n) + '</h3><span class="count">0/' + r.l.length + '</span></div><div class="bar"><i></i></div><div class="room-body">' + body + "</div>";
+        buildRoomControls(card, r);
         hydrate(card);
         box.appendChild(card);
       });
@@ -397,8 +400,93 @@
       var g2 = mt.closest(".grid2"); if (g2 && LIVE && !mt.children.length && !ot.children.length) g2.hidden = true;
     }
 
+
+    /* Glass Home: explicit room covers and timed appliances, independent of lighting. */
+    function buildRoomControls(card, room) {
+      var box = el("div", "gh-controls");
+      (room.covers || []).forEach(function (x) {
+        var c = typeof x === "string" ? { entity: x } : x;
+        if (!c || !/^cover\.[a-z0-9_]+$/.test(c.entity || "")) return;
+        var name = c.name || niceName(c.entity);
+        var row = el("div", "gh-control gh-blind", '<div class="gh-cover-art" aria-hidden="true"><div class="gh-slats"></div><i></i></div><div class="gh-control-title"><i class="mdi mdi-blinds-horizontal"></i><strong>' + esc(name) + '</strong><span class="gh-cover-state" role="status"></span></div><div class="gh-actions"></div>', { "data-cover-entity": c.entity });
+        ["open", "stop", "close"].forEach(function (action) {
+          var label = action.charAt(0).toUpperCase() + action.slice(1);
+          var b = el("button", "btn ghost", esc(label), { type: "button", "data-cover-action": action, "aria-label": label + " " + name });
+          b.addEventListener("click", function () {
+            var cmd = window.GlassHomeRoomControls.command(c.entity, action, sv(c.entity));
+            if (cmd) call(cmd.domain, cmd.service, cmd.data);
+          });
+          $(".gh-actions", row).appendChild(b);
+        });
+        box.appendChild(row);
+      });
+      (room.controls || []).forEach(function (c) {
+        if (!c || !/^switch\.[a-z0-9_]+$/.test(c.entity || "") || !/^input_boolean\.[a-z0-9_]+$/.test(c.boost || "")) return;
+        var name = c.name || niceName(c.entity);
+        var row = el("div", "gh-control gh-blanket", '<div class="gh-blanket-art" aria-hidden="true"><span>♨</span><i></i></div><div class="gh-control-title"><i class="mdi mdi-heating-coil"></i><strong>' + esc(name) + '</strong><span class="gh-appliance-state" role="status"></span></div><div class="gh-actions"></div>', { "data-appliance-entity": c.entity, "data-boost-entity": c.boost });
+        var boost = el("button", "btn ghost gh-boost", "Timed boost", { type: "button", "aria-label": "Start timed boost for " + name });
+        boost.addEventListener("click", function () { if (window.GlassHomeRoomControls.available(sv(c.entity)) && sv(c.boost) && sv(c.boost).state === "off") call("input_boolean", "turn_on", { entity_id: c.boost }); });
+        var off = el("button", "btn ghost gh-off", "Turn off", { type: "button", "aria-label": "Turn off " + name });
+        off.addEventListener("click", function () {
+          if (!window.GlassHomeRoomControls.available(sv(c.entity))) return;
+          call("switch", "turn_off", { entity_id: c.entity });
+          if (window.GlassHomeRoomControls.available(sv(c.boost))) call("input_boolean", "turn_off", { entity_id: c.boost });
+        });
+        var details = el("button", "btn ghost", "Details", { type: "button", "aria-label": name + " details" });
+        details.addEventListener("click", function () { moreInfo(c.entity); });
+        $(".gh-actions", row).appendChild(boost); $(".gh-actions", row).appendChild(off); $(".gh-actions", row).appendChild(details);
+        box.appendChild(row);
+      });
+      if (box.children.length) $(".room-body", card).appendChild(box);
+    }
+    function renderRoomControls() {
+      var helper = window.GlassHomeRoomControls;
+      if (!helper) return;
+      renderPeople();
+      $$("[data-cover-entity]").forEach(function (row) {
+        var c = helper.cover(sv(row.dataset.coverEntity));
+        row.style.setProperty("--blind-closed", (c.position === null ? (c.state === "closed" ? 100 : 50) : 100 - c.position) + "%");
+        row.classList.toggle("na", !c.available);
+        $(".gh-cover-state", row).textContent = c.state.charAt(0).toUpperCase() + c.state.slice(1) + (c.position === null ? "" : " · " + c.position + "%");
+        $$('[data-cover-action]', row).forEach(function (b) { b.disabled = !c[b.dataset.coverAction]; });
+      });
+      $$("[data-appliance-entity]").forEach(function (row) {
+        var s = sv(row.dataset.applianceEntity), boost = sv(row.dataset.boostEntity), ok = helper.available(s), boosting = helper.available(boost) && boost.state === "on";
+        row.classList.toggle("gh-active", ok && s.state === "on");
+        $(".gh-appliance-state", row).textContent = !ok ? "Unavailable" : (s.state === "on" ? "On" : "Off") + (boosting ? " · timed boost active" : "");
+        $(".gh-boost", row).disabled = !ok || !helper.available(boost) || boosting;
+        $(".gh-off", row).disabled = !ok || (s.state !== "on" && !boosting);
+      });
+    }
+    function buildPeople(before) {
+      if (!Array.isArray(CFG.people) || !CFG.people.length) return;
+      var section = el("section", "gh-people-section", '<h2 class="sec-title">Who\'s home?</h2><div class="gh-people"></div>');
+      CFG.people.forEach(function (c) {
+        if (!c || !/^(person|device_tracker)\.[a-z0-9_]+$/.test(c.entity || "")) return;
+        var name = c.name || niceName(c.entity);
+        var icon = mdi(c.icon) || "mdi-account";
+        var b = el("button", "card gh-person", '<span class="gh-avatar"><i class="mdi ' + esc(icon) + '"></i></span><strong>' + esc(name) + '</strong><span class="gh-person-state"></span>', { type: "button", "data-person-entity": c.entity, "aria-label": name + " presence" });
+        b.addEventListener("click", function () { moreInfo(c.entity); });
+        $(".gh-people", section).appendChild(b);
+      });
+      before.parentNode.insertBefore(section, before);
+    }
+    function renderPeople() {
+      $$("[data-person-entity]").forEach(function (b) {
+        var s = sv(b.dataset.personEntity), ok = window.GlassHomeRoomControls.available(s), home = ok && s.state === "home";
+        b.classList.toggle("gh-home", home); b.classList.toggle("na", !ok);
+        $(".gh-person-state", b).textContent = !ok ? "Unavailable" : home ? "Home" : s.state === "not_home" ? "Away" : s.state;
+        var src = s && s.attributes && s.attributes.entity_picture, avatar = $(".gh-avatar", b);
+        if (typeof src === "string" && src.startsWith("/") && !src.startsWith("//") && avatar.dataset.src !== src) {
+          var img = document.createElement("img"); img.src = src; img.alt = "";
+          avatar.textContent = ""; avatar.appendChild(img); avatar.dataset.src = src;
+        }
+      });
+    }
+
     /* ------------------------------------------------------------------ render */
     function render() {
+      renderRoomControls();
       var total = 0, nUn = 0;
       $$(".orb").forEach(function (o) {
         var on = !!state.lights[o.dataset.light];
@@ -526,6 +614,7 @@
       if (!!prev.on !== !!act || !!prev.na !== !!na) later(paintStatus, 0);
       $$('[data-sensor="' + key + '"]').forEach(function (n) {
         n.classList.toggle("active", !!act); n.classList.toggle("na", !!na); n.dataset.on = act ? "1" : "0"; refreshImg(n);
+        var ms = $(".motion-state", n); if (ms) ms.textContent = na ? "Sensor unavailable" : (act ? "Motion detected" : "No motion");
         var st = $(".st-state", n); if (st) st.textContent = (na ? T("Non disponibile") : (act ? T("Movimento!") : T("Nessun movimento"))) + tSuffix(key);
       });
     }
