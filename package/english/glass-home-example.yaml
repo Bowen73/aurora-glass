@@ -1,0 +1,28 @@
+# Generic composition example. All entity IDs below are placeholders.
+title: Glass Home
+views:
+  - title: Home
+    path: home
+    type: panel
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: entities
+            title: Blinds
+            show_header_toggle: false
+            entities:
+              - entity: cover.left_blind
+                name: Left blind
+              - entity: cover.right_blind
+                name: Right blind
+          - type: custom:aurora-glass-card
+            language: en
+            assets: /aurora_glass/btn/
+            rooms:
+              - name: Living room
+                lights: [light.example_lamp]
+            scenes:
+              - id: night
+                show: false
+              - id: away
+                show: false
