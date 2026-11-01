@@ -1534,8 +1534,11 @@
     var p = typeof a.current_position === "number" && isFinite(a.current_position) ? Math.max(0, Math.min(100, a.current_position)) : null;
     var state = ok ? s.state : "unavailable";
     return { available: ok, position: p, state: state,
-      open: ok && !!(f & 1) && state !== "opening" && !(state === "open" && p === 100),
-      close: ok && !!(f & 2) && state !== "closing" && state !== "closed" && p !== 0,
+      // Position reports may lag commands by several seconds. Never lock a
+      // supported direction based on that report: the user must be able to retry
+      // or reverse the blind even while feedback is stale.
+      open: ok && !!(f & 1),
+      close: ok && !!(f & 2),
       stop: ok && !!(f & 8) };
   }
   function command(entity, action, s) {

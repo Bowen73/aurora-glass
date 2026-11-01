@@ -12,14 +12,14 @@ for (const s of [undefined, state('unavailable', 50), state('unknown', 50)]) {
   assert.equal(h.command('cover.example', 'open', s), null);
 }
 assert.equal(h.cover(state('closed', 0)).open, true);
-assert.equal(h.cover(state('closed', 0)).close, false);
-assert.equal(h.cover(state('open', 100)).open, false);
+assert.equal(h.cover(state('closed', 0)).close, true);
+assert.equal(h.cover(state('open', 100)).open, true);
 assert.equal(h.cover(state('open', 100)).close, true);
 assert.equal(h.cover(state('open', 1)).open, true);
-assert.equal(h.cover(state('opening', 30)).open, false);
+assert.equal(h.cover(state('opening', 30)).open, true);
 assert.equal(h.cover(state('opening', 30)).close, true);
 assert.equal(h.cover(state('closing', 30)).stop, true);
-assert.equal(h.cover(state('closing', 30)).close, false);
+assert.equal(h.cover(state('closing', 30)).close, true);
 assert.equal(h.cover(state('open', 50, 8)).open, false);
 assert.equal(h.cover(state('open', 50, 8)).close, false);
 assert.equal(h.cover(state('open', 50, 8)).stop, true);
@@ -30,4 +30,6 @@ const command = h.command('cover.example', 'open', state('closed', 0));
 assert.equal(command.domain, 'cover');
 assert.equal(command.service, 'open_cover');
 assert.equal(command.data.entity_id, 'cover.example');
+assert.equal(h.command('cover.example', 'close', state('closed', 0)).service, 'close_cover');
+assert.equal(h.command('cover.example', 'open', state('open', 100)).service, 'open_cover');
 console.log('Room-control state, capability and command-gating checks passed.');
